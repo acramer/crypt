@@ -205,7 +205,63 @@ def remove(info):
     #return name set
     pass
 
-def main():
+
+def populate(cfile):
+    boxes = get_boxes(get_salt())
+
+    with open(cfile,'r') as f:
+        fullcrypt = base64.b64decode(f.read())
+
+    midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    n = hdecode(midcrypt.pop(0))
+    nis,_,_ = calcPerms(n)
+
+    ncrypt = midcrypt[:n]
+    names = ['']*n
+    
+    decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
+
+    for i, ni in enumerate(nis):
+        names[ni] = decrypt(ncrypt[i], 1)
+
+    return names
+
+
+def getInfo(cfile,nidx):
+    boxes = get_boxes(get_salt())
+
+    with open(cfile,'r') as f:
+        fullcrypt = base64.b64decode(f.read())
+
+    midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    n = hdecode(midcrypt.pop(0))
+    nis,iis,_ = calcPerms(n)
+
+    icrypt = midcrypt[n:2*n]
+    decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
+
+    return decrypt(icrypt[iis.index(nidx)],2)
+
+
+def getPassword(cfile,nidx):
+    boxes = get_boxes(get_salt())
+
+    with open(cfile,'r') as f:
+        fullcrypt = base64.b64decode(f.read())
+
+    midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    n = hdecode(midcrypt.pop(0))
+    nis,_,pis = calcPerms(n)
+
+    pcrypt = midcrypt[2*n:]
+    decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
+
+    return decrypt(pcrypt[pis.index(nidx)],3)
+    # return decrypt(pcrypt[pis[nis.index(nidx)]],3)
+
+
+def main(args):
+    # ipath, opath = tuple(args)
     # Pull Keys
     # Check Password
     # Load file
@@ -217,7 +273,126 @@ def main():
         # Add
         # Remove
     # Save
-    convert_file('watch.txt','watch')
-    #check_conversion('watch.txt','watch')
+    # convert_file('watch.txt','watch')
+    # check_conversion('watch.txt','watch')
+    # convert_file(*args)
+    # check_conversion(*args)
+    if args.mode == 'encrypt':
+        assert args.rawFile, "must specify a input file with 'encrypt' mode"
+        convert_file(args.rawFile, args.crypt_file)
+    elif args.mode == 'access':
+        names = populate(args.cryptFile)
+        while True:
+            query_name = input('Name:')
+            if query_name in names:
+                sindices = [names.index(query_name)]
+                snames   = [(si,names[si]) for si in sindices]
+                print('Found:')
+                print(*['('+str(i)+') '+name for i, (si, name) in enumerate(snames)],sep='\n')
+                while True:
+                    sidx = input('Select:')
+                    if sidx.isdigit() and int(sidx) >= 0 and int(sidx) < len(snames):
+                        sidx = int(sidx)
+                        break
+                    print('Selection out of range or not integer')
+                print('Selected:',names[snames[sidx][0]])
+                while True:
+                    print('Pick from the following actions:')
+                    print('(0) Deselect')
+                    print('(1) Read Infos')
+                    print('(2) Read Password')
+                    print('(3) Change Password')
+                    print('(4) Update Info')
+                    act = int(input('Action:'))
+                    if act == 0: break
+                    elif act == 1:
+                        print(getInfo(args.cryptFile,snames[sidx][0]))
+                    elif act == 2:
+                        print(getPassword(args.cryptFile,snames[sidx][0]))
+                    elif act == 3:
+                        pass
+                    elif act == 4:
+                        pass
+                # TODO: Implement Getting Info and Passwords from Selecting
+            else:
+                print('No Names found')
 
-if __name__ == '__main__': main()
+    # TODO: Populate Names
+    # TODO: Populate Encrypted Info
+    # TODO: Populate Encrypted Passwords
+
+    # ipath, opath = tuple(args)
+    # path = opath
+    # boxes = get_boxes(get_salt())
+
+    # with open(path,'r') as f:
+    #     fullcrypt = base64.b64decode(f.read())
+
+    # midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    # n = hdecode(midcrypt.pop(0))
+    # nis,_,_ = calcPerms(n)
+
+    # ncrypt = midcrypt[:n]
+    # names = ['']*n
+    # 
+    # decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
+
+    # for i, ni in enumerate(nis):
+    #     names[ni] = decrypt(ncrypt[i], 1)
+
+    # TODO: Implement Adding
+    #     TODO: Add Name
+    #     TODO: Mod Password to after selecting Name
+    #     TODO: Add Info to Selected Name
+    #         TODO: Determine Info Format
+    #         TODO: If always strings, trim whitespace and trim quotes
+    #     TODO: Mod Info for Selected Name
+    #     TODO: Add/Mod -> Update Info for Selected Name
+    #     TODO: Save Changes 
+    # TODO: Implement Searching
+    #     TODO: Breakdown
+    # TODO: Implement Removing 
+    #     TODO: Breakdown
+    # TODO: Implement Modifying
+    #     TODO: Breakdown
+    # TODO: Implement Appending Info
+    #     TODO: Breakdown
+    # TODO: Test Recovery
+    #     TODO: Breakdown
+    # TODO: Change Chars and Dlim
+    #     TODO: Breakdown
+    # TODO: Implent Command Line
+    #     TODO: Breakdown
+    # TODO: Rewrite in c and shell
+    #     TODO: Breakdown
+    # TODO: Reimplent Command Line
+    #     TODO: Breakdown
+    # TODO: Credential Time Alive Tracking and Reset Reminder
+    #     TODO: Breakdown
+    # TODO: Reimplent Command Line
+    #     TODO: Breakdown
+
+import sys
+import argparse
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(metavar='MODE',
+                            dest='mode',
+                            type=str,
+                            nargs='?',
+                            choices=['encrypt','access'],
+                            default='access')
+    parser.add_argument(metavar='FILE',
+                            dest='rawFile',
+                            type=str,
+                            nargs='?',
+                            default=None)
+    parser.add_argument('-S', '--salt_file',
+                            dest='saltFile',
+                            type=str,
+                            default='salt.bin')
+    parser.add_argument('-c', '--crypt_file',
+                            dest='cryptFile',
+                            type=str,
+                            default='watch.crypt')
+    main(parser.parse_args())
