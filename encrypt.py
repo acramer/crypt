@@ -8,7 +8,7 @@ dlim = 'ø'
 hnum = ['è','Ä','É','æ','Æ','ô','ù','ÿ','Ö','Ü','ü','ë','£','ì','Ø','é','ä','ò']
 
 # salt = utils.random(pwhash.argon2i.SALTBYTES)
-salt = b'\xee\xaf}\xb2Gn\xbb\xb7\xd7B2\xdb\x89\xef?\xb3'
+# salt = b'\xee\xaf}\xb2Gn\xbb\xb7\xd7B2\xdb\x89\xef?\xb3'
 
 def calcPerms(n):
     H = int(sha256(str(n).encode('utf-8')).hexdigest(),16)
@@ -45,7 +45,15 @@ def get_salt():
     return [f[:slen],f[slen:2*slen],f[2*slen:3*slen],f[3*slen:]]
 
 from getpass import getpass
-def get_boxes(salt,algo=pwhash.argon2i.kdf):
+from time import time
+def get_boxes(salt,algo=pwhash.argon2i.kdf,ttl=100):
+    if get_boxes.boxes is not None and abs(time()-get_boxes.box_time) < get_boxes.ttl:
+        return get_boxes.boxes
+    else:
+        get_boxes.boxes = None
+    get_boxes.box_time = time()
+    get_boxes.ttl = ttl
+
     if not isinstance(salt,list): salt = [salt]*4
     create_box = lambda x : secret.SecretBox(algo(secret.SecretBox.KEY_SIZE,x[0].encode('utf-8'),x[1]))
     while True:
@@ -54,7 +62,12 @@ def get_boxes(salt,algo=pwhash.argon2i.kdf):
         print('Password length must be between 20 and 32 characters')
         # TODO: More password conditions
     plen = len(password)//4
-    return list(map(create_box,zip([password[3*plen:],password[:plen],password[plen:2*plen],password[2*plen:3*plen]],salt)))
+    get_boxes.boxes = list(map(create_box,zip([password[3*plen:],password[:plen],password[plen:2*plen],password[2*plen:3*plen]],salt)))
+    return get_boxes.boxes
+
+get_boxes.box_time = None
+get_boxes.boxes = None
+get_boxes.ttl = None
 
 def convert_mid(a):
     rd = [('\\r','\r'),
@@ -115,8 +128,8 @@ def encrypt_lists(names,infos,passwords,path,boxes):
     dlim = 'ø'
     encrypt_part = hencode(n)
 
-    permute = lambda x, y   : [x[i] for i in calcPerms(len(x))[y]]
-    dictstr = lambda x      : ','.join([k+':'+v for k,v in x.items()])
+    permute = lambda x, y    : [x[i] for i in calcPerms(len(x))[y]]
+    dictstr = lambda x       : ','.join([k+':'+v for k,v in x.items()])
     encrypt = lambda x, bidx : str(boxes[bidx].encrypt(x.encode('utf-8')))[2:][:-1]
 
     for name in permute(names,0):         encrypt_part += dlim + encrypt(name,          1)
@@ -167,44 +180,8 @@ def check_conversion(ipath,opath):
 
 
 # Temp
-def processNames():
-    pass
-
-def getLists(path,key):
-    #return [ordered and decrypted name sets],[],[]
-    pass
-
 def search(name):
     pass
-
-def fetch(nidx):
-    pass
-
-def fetchup(nidx):
-    pass
-
-def edit(nidx,infos):
-    ns = remove(nidx)
-    # add ns to infos
-    add(infos)
-
-def add(info):
-    #order encrypted lists
-    #append name set
-    #if defaults params don't exist initialize
-    #encrypt infos 
-    #append infos 
-    #reorder encrypted lists
-    pass
-
-def remove(info):
-    #order encrypted lists
-    #pop name set
-    #remove infos 
-    #reorder encrypted lists
-    #return name set
-    pass
-
 
 def populate(cfile):
     boxes = get_boxes(get_salt())
@@ -212,7 +189,8 @@ def populate(cfile):
     with open(cfile,'r') as f:
         fullcrypt = base64.b64decode(f.read())
 
-    midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    populate.midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    midcrypt = populate.midcrypt[:]
     n = hdecode(midcrypt.pop(0))
     nis,_,_ = calcPerms(n)
 
@@ -225,31 +203,26 @@ def populate(cfile):
         names[ni] = decrypt(ncrypt[i], 1)
 
     return names
+populate.midcrypt = []
 
 
-def getInfo(cfile,nidx):
+def getInfo(nidx):
     boxes = get_boxes(get_salt())
 
-    with open(cfile,'r') as f:
-        fullcrypt = base64.b64decode(f.read())
-
-    midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    midcrypt = populate.midcrypt[:]
     n = hdecode(midcrypt.pop(0))
     nis,iis,_ = calcPerms(n)
 
     icrypt = midcrypt[n:2*n]
     decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
 
-    return decrypt(icrypt[iis.index(nidx)],2)
+    return dict(p.split(':') for p in decrypt(icrypt[iis.index(nidx)],2).split(','))
 
 
-def getPassword(cfile,nidx):
+def getPassword(nidx):
     boxes = get_boxes(get_salt())
 
-    with open(cfile,'r') as f:
-        fullcrypt = base64.b64decode(f.read())
-
-    midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
+    midcrypt = populate.midcrypt[:]
     n = hdecode(midcrypt.pop(0))
     nis,_,pis = calcPerms(n)
 
@@ -257,88 +230,204 @@ def getPassword(cfile,nidx):
     decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
 
     return decrypt(pcrypt[pis.index(nidx)],3)
-    # return decrypt(pcrypt[pis[nis.index(nidx)]],3)
 
+def updateName(nidx,name):
+    boxes = get_boxes(get_salt())
+    midcrypt = populate.midcrypt[:]
+    n = hdecode(midcrypt.pop(0))
+    idx = calcPerms(n)[0].index(nidx)
+    encrypt = lambda x, bidx : str(boxes[bidx].encrypt(x.encode('utf-8')))[2:][:-1]
+    populate.midcrypt[1+iidx] = encrypt(name, 1)
+
+def upateInfo(nidx, upInfo):
+    boxes = get_boxes(get_salt())
+    midcrypt = populate.midcrypt[:]
+    n = hdecode(midcrypt.pop(0))
+    idx = calcPerms(n)[1].index(nidx)
+
+    dictstr = lambda x       : ','.join([k+':'+v for k,v in x.items()])
+    encrypt = lambda x, bidx : str(boxes[bidx].encrypt(x.encode('utf-8')))[2:][:-1]
+
+    newInfo = getInfo(nidx)
+    for k,v in upInfo.items():
+        if v == '_' and k in newInfo: newInfo.pop(k)
+        else: newInfo[k]=v
+
+    populate.midcrypt[n+1+idx] = encrypt(dictstr(newInfo), 2)
+
+def upatePassword(nidx, newPassword):
+    boxes = get_boxes(get_salt())
+    midcrypt = populate.midcrypt[:]
+    n = hdecode(midcrypt.pop(0))
+    idx = calcPerms(n)[2].index(nidx)
+    encrypt = lambda x, bidx : str(boxes[bidx].encrypt(x.encode('utf-8')))[2:][:-1]
+    populate.midcrypt[2*n+1+idx] = encrypt(newPassword, 3)
+
+def addCredentials(name,info='',password=''):
+    boxes = get_boxes(get_salt())
+    midcrypt = populate.midcrypt[:]
+    n = hdecode(midcrypt.pop(0))
+    perms = calcPerms(n)
+
+    permute = lambda x, y    : [x[i] for i in calcPerms(len(x))[y]]
+    encrypt = lambda x, bidx : str(boxes[bidx].encrypt(x.encode('utf-8')))[2:][:-1]
+
+    ncrypt = midcrypt[:n]
+    icrypt = midcrypt[n:2*n]
+    pcrypt = midcrypt[2*n:]
+
+    names, infos, passwords = ['']*n,['']*n,['']*n
+    
+    for ni,ii,pi in zip(*perms):
+        names[ni]     = ncrypt.pop(0)
+        infos[ii]     = icrypt.pop(0)
+        passwords[pi] = pcrypt.pop(0)
+
+    names.append(encrypt(name,1))
+    infos.append(encrypt(info,2))
+    passwords.append(encrypt(password,3))
+
+    populate.midcrypt = [hencode(n+1)]+permute(names,0)+permute(infos,1)+permute(passwords,2)
+
+def removeCredentials(nidx):
+    boxes = get_boxes(get_salt())
+    midcrypt = populate.midcrypt[:]
+    n = hdecode(midcrypt.pop(0))
+    perms = calcPerms(n)
+
+    ncrypt = midcrypt[:n]
+    icrypt = midcrypt[n:2*n]
+    pcrypt = midcrypt[2*n:]
+
+    names, infos, passwords = ['']*n,['']*n,['']*n
+    
+    for ni,ii,pi in zip(*perms):
+        names[ni]     = ncrypt.pop(0)
+        infos[ii]     = icrypt.pop(0)
+        passwords[pi] = pcrypt.pop(0)
+
+    names.pop(nidx)
+    infos.pop(nidx)
+    passwords.pop(nidx)
+
+    permute = lambda x, y    : [x[i] for i in calcPerms(len(x))[y]]
+    populate.midcrypt = [hencode(n-1)]+permute(names,0)+permute(infos,1)+permute(passwords,2)
+
+
+def save(path):
+    encrypt_final = get_boxes(get_salt())[0].encrypt(dlim.join(populate.midcrypt).encode('utf-8'))
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),path.split('/')[-1]),'w') as f:
+        f.write(base64.b64encode(encrypt_final).decode('ascii'))
+        print('Saved:',os.path.join(os.path.dirname(os.path.abspath(__file__)),path.split('/')[-1]))
 
 def main(args):
-    # ipath, opath = tuple(args)
-    # Pull Keys
-    # Check Password
-    # Load file
-    # Query Loop
-        # Search
-            # Show
-            # Show Password
-        # Edit
-        # Add
-        # Remove
-    # Save
-    # convert_file('watch.txt','watch')
-    # check_conversion('watch.txt','watch')
-    # convert_file(*args)
-    # check_conversion(*args)
     if args.mode == 'encrypt':
         assert args.rawFile, "must specify a input file with 'encrypt' mode"
-        convert_file(args.rawFile, args.crypt_file)
+        convert_file(args.rawFile, args.cryptFile)
     elif args.mode == 'access':
         names = populate(args.cryptFile)
         while True:
             query_name = input('Name:')
+            if query_name == 'quit':
+                save(args.cryptFile)
+                break
             if query_name in names:
                 sindices = [names.index(query_name)]
                 snames   = [(si,names[si]) for si in sindices]
                 print('Found:')
+                print('(n) **Create New**')
+                print('(q) **New Search**')
                 print(*['('+str(i)+') '+name for i, (si, name) in enumerate(snames)],sep='\n')
                 while True:
                     sidx = input('Select:')
-                    if sidx.isdigit() and int(sidx) >= 0 and int(sidx) < len(snames):
+                    if sidx == 'n' and input('Create New (y/n):') == 'y': break
+                    elif sidx == 'q': break
+                    elif sidx.isdigit() and int(sidx) >= 0 and int(sidx) < len(snames):
                         sidx = int(sidx)
                         break
-                    print('Selection out of range or not integer')
-                print('Selected:',names[snames[sidx][0]])
-                while True:
-                    print('Pick from the following actions:')
-                    print('(0) Deselect')
-                    print('(1) Read Infos')
-                    print('(2) Read Password')
-                    print('(3) Change Password')
-                    print('(4) Update Info')
-                    act = int(input('Action:'))
-                    if act == 0: break
-                    elif act == 1:
-                        print(getInfo(args.cryptFile,snames[sidx][0]))
-                    elif act == 2:
-                        print(getPassword(args.cryptFile,snames[sidx][0]))
-                    elif act == 3:
-                        pass
-                    elif act == 4:
-                        pass
-                # TODO: Implement Getting Info and Passwords from Selecting
+                    print('Selection out of range')
+                if sidx == 'q': continue
+                elif sidx == 'n':
+                    defaultName = '' if query_name in names else query_name
+                    newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
+                    newName = newName if newName else defaultName
+                    while newName in names and newName == '': 
+                        print('Different name needed, cannot be blank and cannot exist already')
+                        newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
+                        newName = newName if newName else defaultName
+
+                    while True:
+                        newInfo = input('Info:').strip('{}')
+                        if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])): break
+                        print('Invalid Syntax')
+
+                    addCredentials(newName,newInfo,input('Password:'))
+                    names.append(newName)
+                else:
+                    print('Selected:',names[snames[sidx][0]])
+                    while True:
+                        print('Pick from the following actions:')
+                        print('(0) Deselect')
+                        print('(1) Read Infos')
+                        print('(2) Read Password')
+                        print('(3) Change Name')
+                        print('(4) Update Info')
+                        print('(5) Change Password')
+                        print('(6) Delete')
+                        act = int(input('Action:'))
+                        if act == 0: break
+                        elif act == 1:
+                            print(*['{} : {}'.format(k,v) for k,v in getInfo(snames[sidx][0]).items()],sep='\n')
+                        elif act == 2:
+                            print(getPassword(snames[sidx][0]))
+                        elif act == 3:
+                            defaultName = names[snames[sidx][0]]
+                            newName = input('Name ('+defaultName+'):')
+                            newName = newName if newName else defaultName
+                            while newName in names and newName == '' and newName != defaultName:
+                                print('Different name needed, cannot be blank and cannot exist already')
+                                newName = input('Name ('+defaultName+'):')
+                                newName = newName if newName else defaultName
+                            updateName(snames[sidx][0],newName)
+                            names[snames[sidx][0]] = newName
+                        elif act == 4:
+                            while True:
+                                inp = [x.split(':') for x in input('New Info:').strip('{}').split(',')]
+                                if all(map(lambda x:len(x)==2,inp)): break
+                                print('Invalid Syntax')
+                            upateInfo(snames[sidx][0],dict(inp))
+                            print(*['{} : {}'.format(k,v) for k,v in getInfo(snames[sidx][0]).items()],sep='\n')
+                        elif act == 5:
+                            upatePassword(snames[sidx][0], input('New Password:'))
+                        elif act == 6:
+                            removeCredentials(snames[sidx][0])
+                            names.pop(snames[sidx][0])
+                            break
+
             else:
                 print('No Names found')
+                print('(n) **Create New**')
+                print('(q) **New Search**')
+                while True:
+                    sidx = input('Select:')
+                    if sidx == 'n' and input('Create New (y/n):') == 'y': break
+                    elif sidx == 'q': break
+                if sidx == 'n':
+                    defaultName = '' if query_name in names else query_name
+                    newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
+                    newName = newName if newName else defaultName
+                    while newName in names and newName == '': 
+                         print('Different name needed, cannot be blank and cannot exist already')
+                         newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
+                         newName = newName if newName else defaultName
 
-    # TODO: Populate Names
-    # TODO: Populate Encrypted Info
-    # TODO: Populate Encrypted Passwords
+                    while True:
+                        newInfo = input('Info:').strip('{}')
+                        if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])) or newInfo == '': break
+                        print('Invalid Syntax')
 
-    # ipath, opath = tuple(args)
-    # path = opath
-    # boxes = get_boxes(get_salt())
-
-    # with open(path,'r') as f:
-    #     fullcrypt = base64.b64decode(f.read())
-
-    # midcrypt = boxes[0].decrypt(fullcrypt).decode('utf-8').split(dlim)
-    # n = hdecode(midcrypt.pop(0))
-    # nis,_,_ = calcPerms(n)
-
-    # ncrypt = midcrypt[:n]
-    # names = ['']*n
-    # 
-    # decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
-
-    # for i, ni in enumerate(nis):
-    #     names[ni] = decrypt(ncrypt[i], 1)
+                    addCredentials(newName,newInfo,input('Password:'))
+                    names.append(newName)
 
     # TODO: Implement Adding
     #     TODO: Add Name
@@ -361,7 +450,11 @@ def main(args):
     #     TODO: Breakdown
     # TODO: Change Chars and Dlim
     #     TODO: Breakdown
+    # TODO: Pull and push to private
+    #     TODO: Breakdown
     # TODO: Implent Command Line
+    #     TODO: Breakdown
+    # TODO: Automate Pull/Push
     #     TODO: Breakdown
     # TODO: Rewrite in c and shell
     #     TODO: Breakdown
