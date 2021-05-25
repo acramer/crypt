@@ -179,9 +179,19 @@ def check_conversion(ipath,opath):
 
 
 
-# Temp
-def search(name):
-    pass
+def search(name, names, threshold=-1, num=10):
+    def lev(w1,w2):
+        cmat = [[0]*(len(w2)+1) for _ in range(len(w1)+1)]
+        for r in range(1,len(w1)+1): cmat[r][0] = r
+        for c in range(1,len(w2)+1): cmat[0][c] = c
+    
+        for r in range(len(w1)):
+            for c in range(len(w2)):
+                cmat[r+1][c+1] = min([cmat[r+1][c]+1, cmat[r][c+1]+1, cmat[r][c]+(0 if w1[r]==w2[c] else 1)])
+        return cmat[-1][-1]
+    # return [names.index(name)]
+    # print(list(filter(lambda x:x[1]<threshold or threshold==-1, sorted([(i,lev(name,n)) for i,n in enumerate(names)],key=lambda x:x[1])))[:num])
+    return list(map(lambda x:x[0],filter(lambda x:x[1]<threshold or threshold==-1, sorted([(i,lev(name,n)) for i,n in enumerate(names)],key=lambda x:x[1]))))[:num]
 
 def populate(cfile):
     boxes = get_boxes(get_salt())
@@ -216,7 +226,7 @@ def getInfo(nidx):
     icrypt = midcrypt[n:2*n]
     decrypt = lambda x, bidx : boxes[bidx].decrypt(convert_mid(x)).decode('utf-8')
 
-    return dict(p.split(':') for p in decrypt(icrypt[iis.index(nidx)],2).split(','))
+    return dict(p.split(':') for p in decrypt(icrypt[iis.index(nidx)],2).split(',') if p)
 
 
 def getPassword(nidx):
@@ -327,124 +337,111 @@ def main(args):
     elif args.mode == 'access':
         names = populate(args.cryptFile)
         while True:
-            query_name = input('Name:')
+            query_name = input('Name:').strip()
             if query_name == 'quit':
                 save(args.cryptFile)
                 break
-            if query_name in names:
-                sindices = [names.index(query_name)]
-                snames   = [(si,names[si]) for si in sindices]
+            # if query_name in names or query_name == '':
+            sindices = search(query_name,names) if query_name else range(len(names))
+            snames   = sorted([(si,names[si]) for si in sindices],key=lambda x:x[1])
+            if snames:
                 print('Found:')
-                print('(n) **Create New**')
-                print('(q) **New Search**')
                 print(*['('+str(i)+') '+name for i, (si, name) in enumerate(snames)],sep='\n')
-                while True:
-                    sidx = input('Select:')
-                    if sidx == 'n' and input('Create New (y/n):') == 'y': break
-                    elif sidx == 'q': break
-                    elif sidx.isdigit() and int(sidx) >= 0 and int(sidx) < len(snames):
-                        sidx = int(sidx)
-                        break
-                    print('Selection out of range')
-                if sidx == 'q': continue
-                elif sidx == 'n':
-                    defaultName = '' if query_name in names else query_name
-                    newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
-                    newName = newName if newName else defaultName
-                    while newName in names and newName == '': 
-                        print('Different name needed, cannot be blank and cannot exist already')
-                        newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
-                        newName = newName if newName else defaultName
-
-                    while True:
-                        newInfo = input('Info:').strip('{}')
-                        if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])): break
-                        print('Invalid Syntax')
-
-                    addCredentials(newName,newInfo,input('Password:'))
-                    names.append(newName)
-                else:
-                    print('Selected:',names[snames[sidx][0]])
-                    while True:
-                        print('Pick from the following actions:')
-                        print('(0) Deselect')
-                        print('(1) Read Infos')
-                        print('(2) Read Password')
-                        print('(3) Change Name')
-                        print('(4) Update Info')
-                        print('(5) Change Password')
-                        print('(6) Delete')
-                        act = int(input('Action:'))
-                        if act == 0: break
-                        elif act == 1:
-                            print(*['{} : {}'.format(k,v) for k,v in getInfo(snames[sidx][0]).items()],sep='\n')
-                        elif act == 2:
-                            print(getPassword(snames[sidx][0]))
-                        elif act == 3:
-                            defaultName = names[snames[sidx][0]]
-                            newName = input('Name ('+defaultName+'):')
-                            newName = newName if newName else defaultName
-                            while newName in names and newName == '' and newName != defaultName:
-                                print('Different name needed, cannot be blank and cannot exist already')
-                                newName = input('Name ('+defaultName+'):')
-                                newName = newName if newName else defaultName
-                            updateName(snames[sidx][0],newName)
-                            names[snames[sidx][0]] = newName
-                        elif act == 4:
-                            while True:
-                                inp = [x.split(':') for x in input('New Info:').strip('{}').split(',')]
-                                if all(map(lambda x:len(x)==2,inp)): break
-                                print('Invalid Syntax')
-                            upateInfo(snames[sidx][0],dict(inp))
-                            print(*['{} : {}'.format(k,v) for k,v in getInfo(snames[sidx][0]).items()],sep='\n')
-                        elif act == 5:
-                            upatePassword(snames[sidx][0], input('New Password:'))
-                        elif act == 6:
-                            removeCredentials(snames[sidx][0])
-                            names.pop(snames[sidx][0])
-                            break
-
             else:
                 print('No Names found')
-                print('(n) **Create New**')
-                print('(q) **New Search**')
-                while True:
-                    sidx = input('Select:')
-                    if sidx == 'n' and input('Create New (y/n):') == 'y': break
-                    elif sidx == 'q': break
-                if sidx == 'n':
-                    defaultName = '' if query_name in names else query_name
-                    newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
+            print('(n) **Create New**')
+            print('(q) **New Search**')
+            while True:
+                sidx = input('Select:').strip()
+                if sidx == 'q' or (sidx == 'n' and input('Create New (y/n):').strip() == 'y'): break
+                elif sidx.isdigit() and int(sidx) >= 0 and int(sidx) < len(snames):
+                    sidx = int(sidx)
+                    break
+                print('Selection out of range')
+            if sidx == 'q': continue
+            elif sidx == 'n':
+                defaultName = '' if query_name in names else query_name
+                newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':').strip()
+                newName = newName if newName else defaultName
+                while newName in names and newName == '': 
+                    print('Different name needed, cannot be blank and cannot exist already')
+                    newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':').strip()
                     newName = newName if newName else defaultName
-                    while newName in names and newName == '': 
-                         print('Different name needed, cannot be blank and cannot exist already')
-                         newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':')
-                         newName = newName if newName else defaultName
 
-                    while True:
-                        newInfo = input('Info:').strip('{}')
-                        if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])) or newInfo == '': break
-                        print('Invalid Syntax')
+                while True:
+                    newInfo = input('Info:').strip('{}').strip()
+                    if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])): break
+                    print('Invalid Syntax')
 
-                    addCredentials(newName,newInfo,input('Password:'))
-                    names.append(newName)
+                addCredentials(newName,newInfo,input('Password:').strip())
+                names.append(newName)
+            else:
+                print('Selected:',names[snames[sidx][0]])
+                while True:
+                    print('Pick from the following actions:')
+                    print('(0) Deselect')
+                    print('(1) Read Infos')
+                    print('(2) Read Password')
+                    print('(3) Change Name')
+                    print('(4) Update Info')
+                    print('(5) Change Password')
+                    print('(6) Delete')
+                    act = int(input('Action:').strip())
+                    if act == 0: break
+                    elif act == 1:
+                        print(*['{} : {}'.format(k,v) for k,v in getInfo(snames[sidx][0]).items()],sep='\n')
+                    elif act == 2:
+                        print(getPassword(snames[sidx][0]))
+                    elif act == 3:
+                        defaultName = names[snames[sidx][0]]
+                        newName = input('Name ('+defaultName+'):').strip()
+                        newName = newName if newName else defaultName
+                        while newName in names and newName == '' and newName != defaultName:
+                            print('Different name needed, cannot be blank and cannot exist already')
+                            newName = input('Name ('+defaultName+'):').strip()
+                            newName = newName if newName else defaultName
+                        updateName(snames[sidx][0],newName)
+                        names[snames[sidx][0]] = newName
+                    elif act == 4:
+                        while True:
+                            inp = [x.split(':') for x in input('New Info:').strip().strip('{}').split(',')]
+                            if all(map(lambda x:len(x)==2,inp)): break
+                            print('Invalid Syntax')
+                        upateInfo(snames[sidx][0],dict(inp))
+                        print(*['{} : {}'.format(k,v) for k,v in getInfo(snames[sidx][0]).items()],sep='\n')
+                    elif act == 5:
+                        upatePassword(snames[sidx][0], input('New Password:').strip())
+                    elif act == 6:
+                        removeCredentials(snames[sidx][0])
+                        names.pop(snames[sidx][0])
+                        break
 
-    # TODO: Implement Adding
-    #     TODO: Add Name
-    #     TODO: Mod Password to after selecting Name
-    #     TODO: Add Info to Selected Name
-    #         TODO: Determine Info Format
-    #         TODO: If always strings, trim whitespace and trim quotes
-    #     TODO: Mod Info for Selected Name
-    #     TODO: Add/Mod -> Update Info for Selected Name
-    #     TODO: Save Changes 
+            # else:
+            #     print('No Names found')
+            #     print('(n) **Create New**')
+            #     print('(q) **New Search**')
+            #     while True:
+            #         sidx = input('Select:').strip()
+            #         if sidx == 'q' or (sidx == 'n' and input('Create New (y/n):').strip() == 'y'): break
+            #     if sidx == 'q': continue
+            #     elif sidx == 'n':
+            #         defaultName = '' if query_name in names else query_name
+            #         newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':').strip()
+            #         newName = newName if newName else defaultName
+            #         while newName in names and newName == '': 
+            #              print('Different name needed, cannot be blank and cannot exist already')
+            #              newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':').strip()
+            #              newName = newName if newName else defaultName
+
+            #         while True:
+            #             newInfo = input('Info:').strip().strip('{}')
+            #             if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])) or newInfo == '': break
+            #             print('Invalid Syntax')
+
+            #         addCredentials(newName,newInfo,input('Password:').strip())
+            #         names.append(newName)
+
     # TODO: Implement Searching
-    #     TODO: Breakdown
-    # TODO: Implement Removing 
-    #     TODO: Breakdown
-    # TODO: Implement Modifying
-    #     TODO: Breakdown
-    # TODO: Implement Appending Info
     #     TODO: Breakdown
     # TODO: Test Recovery
     #     TODO: Breakdown
