@@ -7,9 +7,6 @@ bletters = ['Ç','ü','é','â','ä','à','å','ç','ê','ë','è','ï','î','ì
 dlim = 'ø'
 hnum = ['è','Ä','É','æ','Æ','ô','ù','ÿ','Ö','Ü','ü','ë','£','ì','Ø','é','ä','ò']
 
-# salt = utils.random(pwhash.argon2i.SALTBYTES)
-# salt = b'\xee\xaf}\xb2Gn\xbb\xb7\xd7B2\xdb\x89\xef?\xb3'
-
 def calcPerms(n):
     H = int(sha256(str(n).encode('utf-8')).hexdigest(),16)
     ret = [[],[],[]]
@@ -125,7 +122,7 @@ def download_from_file(path):
         
 def encrypt_lists(names,infos,passwords,path,boxes):
     n = len(names)
-    dlim = 'ø'
+    # dlim = 'ø'
     encrypt_part = hencode(n)
 
     permute = lambda x, y    : [x[i] for i in calcPerms(len(x))[y]]
@@ -180,6 +177,13 @@ def check_conversion(ipath,opath):
 
 
 def search(name, names, threshold=-1, num=10):
+    # Tokenize w1
+    # Tokenize w2
+    # for each word in w1
+    #   for each word in w2
+    #     compare lev of words
+    #   take the minimum lev
+    # Compute the average lev of w1 words
     def lev(w1,w2):
         cmat = [[0]*(len(w2)+1) for _ in range(len(w1)+1)]
         for r in range(1,len(w1)+1): cmat[r][0] = r
@@ -189,8 +193,6 @@ def search(name, names, threshold=-1, num=10):
             for c in range(len(w2)):
                 cmat[r+1][c+1] = min([cmat[r+1][c]+1, cmat[r][c+1]+1, cmat[r][c]+(0 if w1[r]==w2[c] else 1)])
         return cmat[-1][-1]
-    # return [names.index(name)]
-    # print(list(filter(lambda x:x[1]<threshold or threshold==-1, sorted([(i,lev(name,n)) for i,n in enumerate(names)],key=lambda x:x[1])))[:num])
     return list(map(lambda x:x[0],filter(lambda x:x[1]<threshold or threshold==-1, sorted([(i,lev(name,n)) for i,n in enumerate(names)],key=lambda x:x[1]))))[:num]
 
 def populate(cfile):
@@ -341,7 +343,6 @@ def main(args):
             if query_name == 'quit':
                 save(args.cryptFile)
                 break
-            # if query_name in names or query_name == '':
             sindices = search(query_name,names) if query_name else range(len(names))
             snames   = sorted([(si,names[si]) for si in sindices],key=lambda x:x[1])
             if snames:
@@ -416,33 +417,6 @@ def main(args):
                         names.pop(snames[sidx][0])
                         break
 
-            # else:
-            #     print('No Names found')
-            #     print('(n) **Create New**')
-            #     print('(q) **New Search**')
-            #     while True:
-            #         sidx = input('Select:').strip()
-            #         if sidx == 'q' or (sidx == 'n' and input('Create New (y/n):').strip() == 'y'): break
-            #     if sidx == 'q': continue
-            #     elif sidx == 'n':
-            #         defaultName = '' if query_name in names else query_name
-            #         newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':').strip()
-            #         newName = newName if newName else defaultName
-            #         while newName in names and newName == '': 
-            #              print('Different name needed, cannot be blank and cannot exist already')
-            #              newName = input('Name'+(' ('+defaultName+')' if defaultName else '')+':').strip()
-            #              newName = newName if newName else defaultName
-
-            #         while True:
-            #             newInfo = input('Info:').strip().strip('{}')
-            #             if all(map(lambda x:len(x)==2,[x.split(':') for x in newInfo.split(',')])) or newInfo == '': break
-            #             print('Invalid Syntax')
-
-            #         addCredentials(newName,newInfo,input('Password:').strip())
-            #         names.append(newName)
-
-    # TODO: Implement Searching
-    #     TODO: Breakdown
     # TODO: Test Recovery
     #     TODO: Breakdown
     # TODO: Change Chars and Dlim
